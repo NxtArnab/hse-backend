@@ -34,7 +34,7 @@ export async function handleLoginUser(req, res, next) {
         company: user.company?._id,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "7d" },
     );
 
     // Set HTTP-only cookie
@@ -46,8 +46,8 @@ export async function handleLoginUser(req, res, next) {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    delete user.password; 
-    
+    delete user.password;
+
     return res.status(200).json({
       message: "Login successful",
       user,

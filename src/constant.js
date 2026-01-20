@@ -1,1 +1,1 @@
-export const COLLECTION_CREATE="createIncident";
+export const COLLECTION_CREATE = "dev";
