@@ -1,0 +1,34 @@
+### create user
+
+POST http://localhost:7000/api/v1/user/create-user
+Content-Type: application/json
+
+{
+  "name": "Arnab Chatterjee",
+  "email": "arnab.chatterjee@nxtanalytica.com",
+  "password": "Arnab@2002",
+  "roles": ["admin", "user"],
+  "company": "NxtAnalytica"
+}
+
+
+### login
+POST http://localhost:7000/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "arnab.chatterjee@nxtanalytica.com",
+  "password": "Arnab@2002" 
+}
+
+### logout 
+POST http://localhost:7000/api/v1/auth/logout
+
+
+### get user details
+GET http://localhost:7000/api/v1/auth/get-current-user
+
+
+### get all users
+GET http://localhost:7000/api/v1/user/all
+

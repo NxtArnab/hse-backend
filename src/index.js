@@ -1,22 +1,24 @@
-import mongoose from "mongoose";
 import dotenv from "dotenv";
-import { COLLECTION_CREATE } from "./constant.js";
 import router from "./routes.js";
 import express from "express";
+import cookieParser from "cookie-parser";
+import initializeDB from "../utils/db.js";
+import cors from "cors";
 
-dotenv.config({ quiet: true });
+dotenv.config();
 
-mongoose
-  .connect(`${process.env.BASE_URL}/${COLLECTION_CREATE}`)
-  .then(() => {
-    console.log("Database Connected");
-  })
-  .catch((err) => {
-    console.log(err);
-  });
+const corsOptions = {
+  origin: ["http://localhost:3000"],
+  credentials: true,
+};
+
+initializeDB();
 
 const app = express();
+
+app.use(cors(corsOptions));
 app.use(express.json());
+app.use(cookieParser());
 
 app.use("/api/v1/", router);
 
