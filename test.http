@@ -4,9 +4,9 @@ POST http://localhost:7000/api/v1/user/create-user
 Content-Type: application/json
 
 {
-  "name": "Arnab Chatterjee",
-  "email": "arnab.chatterjee@nxtanalytica.com",
-  "password": "Arnab@2002",
+  "name": "Ashish Saha",
+  "email": "sahaashish691@gmail.com",
+  "password": "ashish@123",
   "roles": ["admin", "user"],
   "company": "NxtAnalytica"
 }

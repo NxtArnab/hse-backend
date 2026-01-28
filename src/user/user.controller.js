@@ -14,22 +14,26 @@ export async function handleGetAllUsers(req, res, next) {
 }
 
 export async function handleCreateUser(req, res, next) {
-  const { name, email, password, roles, company } = req.body;
+  try {
+    const { name, email, password, roles, company } = req.body;
 
-  checkRequiredFields({ name, email, password });
+    checkRequiredFields({ name, email, password });
 
-  if (await userExists(email)) {
-    const error = new Error("User already exists");
-    error.statusCode = 409;
-    throw error;
+    if (await userExists(email)) {
+      const error = new Error("User already exists");
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const newUser = await createUser({ name, email, password, roles, company });
+
+    return res.status(201).json({
+      message: "User created successfully",
+      user: newUser,
+    });
+  } catch (err) {
+    return next(err);
   }
-
-  const newUser = await createUser({ name, email, password, roles, company });
-
-  return res.status(201).json({
-    message: "User created successfully",
-    user: newUser,
-  });
 }
 
 export async function handleUpdateUser(req, res, next) {
