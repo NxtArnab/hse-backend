@@ -6,13 +6,16 @@ import {
   handleGetAllUsers,
   hardDeleteUser,
 } from "./user.controller.js";
+import { verify } from "../middlewares/authentication.middleware.js";
 
 const userRouter = express.Router();
 
-userRouter.get("/all", handleGetAllUsers); // /api/user/all
+// All user routes require authentication
+
+userRouter.get("/all",verify, handleGetAllUsers); // /api/v1/user/all
 userRouter.post("/create-user", handleCreateUser);
-userRouter.put("/update-user/:id", handleUpdateUser);
-userRouter.patch("/soft-delete/:id", softDeleteUser);
-userRouter.delete("/:id", hardDeleteUser);
+userRouter.put("/update-user/:id",verify, handleUpdateUser);
+userRouter.patch("/soft-delete/:id",verify, softDeleteUser);
+userRouter.delete("/:id",verify, hardDeleteUser);
 
 export default userRouter;

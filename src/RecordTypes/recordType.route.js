@@ -1,8 +1,14 @@
 import express from "express";
-import { getRecordTypes } from "./recordType.controller.js";
+import { getRecordTypes, createRecordType, updateRecordType, deleteRecordType } from "./recordType.controller.js";
+import { verify } from "../middlewares/authentication.middleware.js";
 
-const router = express.Router();
+const recordTypeRoutes = express.Router();
 
-router.get("/", getRecordTypes);
+recordTypeRoutes.use(verify); // Admin routes should be protected
 
-export default router;
+recordTypeRoutes.get("/", getRecordTypes);
+recordTypeRoutes.post("/", createRecordType);
+recordTypeRoutes.put("/:id", updateRecordType);
+recordTypeRoutes.delete("/:id", deleteRecordType);
+
+export default recordTypeRoutes;

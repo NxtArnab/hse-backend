@@ -32,13 +32,17 @@ export const getUserByEmail = async (email, hidePassword = false) => {
 
 export const createUser = async ({ name, email, password, roles }) => {
   const normalizedEmail = String(email).trim().toLowerCase();
+  const normalizedRoles = Array.isArray(roles)
+    ? roles.filter(Boolean)
+    : ["user"];
 
   const hashedPassword = await hashPassword(password);
   const user = new User({
     name,
     email: normalizedEmail,
     password: hashedPassword,
-    roles,
+    roles: normalizedRoles.length > 0 ? normalizedRoles : ["user"],
+    lastModifiedBy: normalizedEmail,
   });
 
   const newUser = await user.save();

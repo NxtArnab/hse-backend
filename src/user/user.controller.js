@@ -1,4 +1,3 @@
-import mongoose from "mongoose";
 import checkRequiredFields from "../../utils/checkRequiredFields.js";
 import User from "./user.model.js";
 import { createUser, userExists } from "./user.service.js";
@@ -35,13 +34,22 @@ export async function handleCreateUser(req, res, next) {
 export async function handleUpdateUser(req, res, next) {
   try {
     const { id } = req.params;
-    const { name, email, isAdmin, avatarUrl, isActive } = req.body;
+    const { name, email, isAdmin, avatarUrl, isActive, roles } = req.body;
 
     checkRequiredFields({ id });
 
+    const updatePayload = {};
+    if (name !== undefined) updatePayload.name = name;
+    if (email !== undefined) updatePayload.email = String(email).trim().toLowerCase();
+    if (isAdmin !== undefined) updatePayload.isAdmin = isAdmin;
+    if (avatarUrl !== undefined) updatePayload.avatarUrl = avatarUrl;
+    if (isActive !== undefined) updatePayload.isActive = isActive;
+    if (roles !== undefined) updatePayload.roles = Array.isArray(roles) ? roles : [];
+    updatePayload.lastModifiedBy = req.user?.email || req.user?.id || "system";
+
     const updatedUser = await User.findByIdAndUpdate(
       id,
-      { name, email, isAdmin, avatarUrl, isActive },
+      updatePayload,
       { new: true },
     );
 
@@ -62,7 +70,10 @@ export async function softDeleteUser(req, res, next) {
     checkRequiredFields({ id });
     const deletedUser = await User.findByIdAndUpdate(
       id,
-      { isActive: false },
+      {
+        isActive: false,
+        lastModifiedBy: req.user?.email || req.user?.id || "system",
+      },
       { new: true },
     );
     if (!deletedUser) {

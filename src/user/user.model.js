@@ -5,6 +5,8 @@ const UserSchema = new mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String, required: true },
     password: { type: String, required: true },
+    roles: { type: [String], default: ["user"] },
+    lastModifiedBy: { type: String, default: null },
     isActive: { type: Boolean, default: true },
     isAdmin: { type: Boolean, default: false },
     avatarUrl: { type: String },
