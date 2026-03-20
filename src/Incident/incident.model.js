@@ -53,6 +53,27 @@ const incidentSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    distributionRoles: {
+        type: [String],
+        default: []
+    },
+    distributionUsers: [
+        {
+            user: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                required: false
+            },
+            name: {
+                type: String,
+                required: false
+            },
+            email: {
+                type: String,
+                required: false
+            }
+        }
+    ],
     incident_attachment: attachmentSchema,
     investigation_contributing_behaviour: {
         type: String,
