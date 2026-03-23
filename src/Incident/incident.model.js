@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 const attachmentSchema = new mongoose.Schema({
+    driveItemId: { type: String, required: false },
     originalName: { type: String, required: false },
     storedName: { type: String, required: false },
     fileUrl: { type: String, required: false },
@@ -75,6 +76,10 @@ const incidentSchema = new mongoose.Schema({
         }
     ],
     incident_attachment: attachmentSchema,
+    incident_attachments: {
+        type: [attachmentSchema],
+        default: []
+    },
     investigation_contributing_behaviour: {
         type: String,
         enum: ["Equipment", "Environment"],
@@ -135,7 +140,6 @@ const incidentSchema = new mongoose.Schema({
         required: true
     }
 }, { timestamps: true });
-
 const IncidentModel = mongoose.model("Incident", incidentSchema);
 
 export default IncidentModel;
