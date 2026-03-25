@@ -37,9 +37,11 @@ export const updateRecordType = async (req, res) => {
         const { id } = req.params;
         const { label, layout, isActive } = req.body;
 
+        const updatePayload = { label, layout, isActive };
+
         const updated = await RecordType.findByIdAndUpdate(
             id,
-            { label, layout, isActive },
+            updatePayload,
             { new: true }
         );
 

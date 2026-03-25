@@ -82,12 +82,10 @@ const incidentSchema = new mongoose.Schema({
     },
     investigation_contributing_behaviour: {
         type: String,
-        enum: ["Equipment", "Environment"],
         required: false
     },
     investigation_contributing_condition: {
         type: String,
-        enum: ["Physical", "Psychological"],
         required: false
     },
     recordTypeForms: [
@@ -130,7 +128,21 @@ const incidentSchema = new mongoose.Schema({
         {
             type: { type: String, enum: ["Corrective", "Preventive"], required: true },
             description: { type: String, required: true },
-            attachment: attachmentSchema
+            attachment: attachmentSchema,
+            observation: {
+                observationDate: { type: Date, required: false },
+                observedBy: { type: String, required: false },
+                actionStatus: {
+                    type: String,
+                    enum: ['Open', 'In Progress', 'Completed', 'Overdue', 'Cancelled'],
+                    default: 'Open'
+                },
+                percentageComplete: { type: Number, min: 0, max: 100, default: 0 },
+                observationNotes: { type: String, required: false },
+                findingsOrBarriers: { type: String, required: false },
+                followUpRequired: { type: Boolean, default: false },
+                nextObservationDate: { type: Date, required: false },
+            }
         }
     ],
 

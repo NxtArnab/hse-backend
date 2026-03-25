@@ -1,6 +1,39 @@
 import path from "path";
 import IncidentModel from "./incident.model.js";
 
+const normalizeAttachments = (incident_attachments, incident_attachment) => {
+  if (Array.isArray(incident_attachments)) return incident_attachments.filter(Boolean);
+  if (incident_attachment) return [incident_attachment];
+  return [];
+};
+
+const buildIncidentPayload = (payload) => {
+  const normalizedAttachments = normalizeAttachments(payload.incident_attachments, payload.incident_attachment);
+
+  return {
+    incident_title: payload.incident_title,
+    incident_eventTime: payload.incident_eventTime,
+    incident_recordable: payload.incident_recordable,
+    incident_description: payload.incident_description,
+    incident_eventDate: payload.incident_eventDate,
+    incident_timeUnknown: payload.incident_timeUnknown,
+    incident_isPrivate: payload.incident_isPrivate,
+    distributionRoles: payload.distributionRoles,
+    distributionUsers: payload.distributionUsers,
+    incident_attachment: normalizedAttachments[0] || payload.incident_attachment || null,
+    incident_attachments: normalizedAttachments,
+    investigation_contributing_behaviour: payload.investigation_contributing_behaviour,
+    investigation_contributing_condition: payload.investigation_contributing_condition,
+    recordTypeForms: payload.recordTypeForms,
+    observation_description: payload.observation_description,
+    observation_status: payload.observation_status,
+    observation_observedBy: payload.observation_observedBy,
+    observation_files: payload.observation_files,
+    witnesses: payload.witnesses,
+    actions: payload.actions,
+  };
+};
+
 const getAccessToken = async () => {
   const tokenEndpoint = `https://login.microsoftonline.com/${process.env.TENANT_ID}/oauth2/v2.0/token`;
   const params = new URLSearchParams();
@@ -119,62 +152,16 @@ export const previewIncidentAttachment = async (req, res) => {
 
 export const createIncident = async (req, res) => {
   try {
-    const {
-      incident_title,
-      incident_eventTime,
-      incident_recordable,
-      incident_description,
-      incident_eventDate,
-      incident_timeUnknown,
-      incident_isPrivate,
-      distributionRoles,
-      distributionUsers,
-      incident_attachments,
-      incident_attachment,
-      investigation_contributing_behaviour,
-      investigation_contributing_condition,
-      recordTypeForms,
-      observation_description,
-      observation_status,
-      observation_observedBy,
-      observation_files,
-      witnesses,
-      actions
-    } = req.body;
+    const incidentPayload = buildIncidentPayload(req.body);
 
-    const normalizedAttachments = Array.isArray(incident_attachments)
-      ? incident_attachments.filter(Boolean)
-      : incident_attachment
-        ? [incident_attachment]
-        : [];
-
-    const Incident = await IncidentModel.create({
-      incident_title,
-      incident_eventTime,
-      incident_recordable,
-      incident_description,
-      incident_eventDate,
-      incident_timeUnknown,
-      incident_isPrivate,
-      distributionRoles,
-      distributionUsers,
-      incident_attachment: normalizedAttachments[0] || incident_attachment || null,
-      incident_attachments: normalizedAttachments,
-      investigation_contributing_behaviour,
-      investigation_contributing_condition,
-      recordTypeForms,
-      observation_description,
-      observation_status,
-      observation_observedBy,
-      observation_files,
-      witnesses,
-      actions,
-      createdBy: req.user.id
+    const incident = await IncidentModel.create({
+      ...incidentPayload,
+      createdBy: req.user.id,
     });
 
     res
       .status(201)
-      .json({ message: "Incident Created Successfully", data: Incident });
+      .json({ message: "Incident Created Successfully", data: incident });
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Internal Server Error" });
@@ -210,59 +197,11 @@ export const getIncidentById = async (req, res) => {
 export const updateIncident = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      incident_title,
-      incident_eventTime,
-      incident_recordable,
-      incident_description,
-      incident_eventDate,
-      incident_timeUnknown,
-      incident_isPrivate,
-      distributionRoles,
-      distributionUsers,
-      incident_attachments,
-      incident_attachment,
-      investigation_contributing_behaviour,
-      investigation_contributing_condition,
-      recordTypeForms,
-      observation_description,
-      observation_status,
-      observation_observedBy,
-      observation_files,
-      witnesses,
-      actions,
-    } = req.body;
-
-    const normalizedAttachments = Array.isArray(incident_attachments)
-      ? incident_attachments.filter(Boolean)
-      : incident_attachment
-        ? [incident_attachment]
-        : [];
+    const incidentPayload = buildIncidentPayload(req.body);
 
     const updatedIncident = await IncidentModel.findByIdAndUpdate(
       id,
-      {
-        incident_title,
-        incident_eventTime,
-        incident_recordable,
-        incident_description,
-        incident_eventDate,
-        incident_timeUnknown,
-        incident_isPrivate,
-        distributionRoles,
-        distributionUsers,
-        incident_attachment: normalizedAttachments[0] || incident_attachment || null,
-        incident_attachments: normalizedAttachments,
-        investigation_contributing_behaviour,
-        investigation_contributing_condition,
-        recordTypeForms,
-        observation_description,
-        observation_status,
-        observation_observedBy,
-        observation_files,
-        witnesses,
-        actions,
-      },
+      incidentPayload,
       { new: true },
     );
 

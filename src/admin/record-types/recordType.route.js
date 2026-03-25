@@ -1,6 +1,6 @@
 import express from "express";
 import { getRecordTypes, createRecordType, updateRecordType, deleteRecordType } from "./recordType.controller.js";
-import { verify } from "../middlewares/authentication.middleware.js";
+import { verify } from "../../middlewares/authentication.middleware.js";
 
 const recordTypeRoutes = express.Router();
 

@@ -2,6 +2,8 @@ import checkRequiredFields from "../../utils/checkRequiredFields.js";
 import User from "./user.model.js";
 import { createUser, userExists } from "./user.service.js";
 
+const getActor = (req) => req.user?.email || req.user?.id || "system";
+
 export async function handleGetAllUsers(req, res, next) {
   try {
     const query = req.query || {};
@@ -49,7 +51,7 @@ export async function handleUpdateUser(req, res, next) {
     if (avatarUrl !== undefined) updatePayload.avatarUrl = avatarUrl;
     if (isActive !== undefined) updatePayload.isActive = isActive;
     if (roles !== undefined) updatePayload.roles = Array.isArray(roles) ? roles : [];
-    updatePayload.lastModifiedBy = req.user?.email || req.user?.id || "system";
+    updatePayload.lastModifiedBy = getActor(req);
 
     const updatedUser = await User.findByIdAndUpdate(
       id,
@@ -76,7 +78,7 @@ export async function softDeleteUser(req, res, next) {
       id,
       {
         isActive: false,
-        lastModifiedBy: req.user?.email || req.user?.id || "system",
+        lastModifiedBy: getActor(req),
       },
       { new: true },
     );

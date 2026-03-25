@@ -1,6 +1,12 @@
 import jwt from "jsonwebtoken";
 import { checkPassword, getUserByEmail } from "../user/user.service.js";
 
+const invalidCredentialsError = () => {
+  const error = new Error("Invalid email or password");
+  error.statusCode = 401;
+  return error;
+};
+
 export async function handleLoginUser(req, res, next) {
   try {
     const { email, password } = req.body;
@@ -13,16 +19,12 @@ export async function handleLoginUser(req, res, next) {
 
     const user = await getUserByEmail(String(email).trim().toLowerCase());
     if (!user) {
-      const error = new Error("Invalid email or password");
-      error.statusCode = 401;
-      throw error;
+      throw invalidCredentialsError();
     }
 
     const isPasswordValid = await checkPassword(password, user.password);
     if (!isPasswordValid) {
-      const error = new Error("Invalid email or password");
-      error.statusCode = 401;
-      throw error;
+      throw invalidCredentialsError();
     }
 
     // Generate JWT token

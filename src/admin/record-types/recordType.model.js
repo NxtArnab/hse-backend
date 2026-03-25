@@ -10,7 +10,7 @@ const recordTypeSchema = new mongoose.Schema(
       label: { type: String, required: true },
       type: {
         type: String,
-        enum: ["text", "textarea", "select", "date", "checkbox", "file", "select-api", "number"],
+        enum: ["text", "textarea", "select", "date", "time", "checkbox", "file", "select-api", "number", "body-diagram"],
         required: true
       },
       options: [String], // for select and checkbox
