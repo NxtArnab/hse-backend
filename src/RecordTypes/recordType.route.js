@@ -1,8 +1,16 @@
 import express from "express";
-import { getRecordTypes } from "./recordType.controller.js";
+import {
+	createRecordType,
+	deleteRecordType,
+	getRecordTypes,
+	updateRecordType,
+} from "./recordType.controller.js";
 
 const router = express.Router();
 
 router.get("/", getRecordTypes);
+router.post("/", createRecordType);
+router.put("/:id", updateRecordType);
+router.delete("/:id", deleteRecordType);
 
 export default router;
