@@ -34,12 +34,42 @@ const buildIncidentPayload = (payload) => {
   };
 };
 
+const getEnv = (...keys) => {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+};
+
+const getGraphConfig = () => {
+  const tenantId = getEnv("TENANT_ID", "AZURE_TENANT_ID", "MICROSOFT_TENANT_ID");
+  const clientId = getEnv("CLIENT_ID", "AZURE_CLIENT_ID", "MICROSOFT_CLIENT_ID");
+  const clientSecret = getEnv("CLIENT_SECRET", "AZURE_CLIENT_SECRET", "MICROSOFT_CLIENT_SECRET");
+  const siteId = getEnv("SITE_ID", "SHAREPOINT_SITE_ID", "GRAPH_SITE_ID");
+  const driveId = getEnv("DRIVE_ID", "SHAREPOINT_DRIVE_ID", "GRAPH_DRIVE_ID");
+
+  return { tenantId, clientId, clientSecret, siteId, driveId };
+};
+
 const getAccessToken = async () => {
-  const tokenEndpoint = `https://login.microsoftonline.com/${process.env.TENANT_ID}/oauth2/v2.0/token`;
+  const { tenantId, clientId, clientSecret } = getGraphConfig();
+  const missing = [];
+  if (!tenantId) missing.push("TENANT_ID");
+  if (!clientId) missing.push("CLIENT_ID");
+  if (!clientSecret) missing.push("CLIENT_SECRET");
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Attachment upload is not configured. Missing environment variable(s): ${missing.join(", ")}.`,
+    );
+  }
+
+  const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
   const params = new URLSearchParams();
   params.append("grant_type", "client_credentials");
-  params.append("client_id", process.env.CLIENT_ID);
-  params.append("client_secret", process.env.CLIENT_SECRET);
+  params.append("client_id", clientId);
+  params.append("client_secret", clientSecret);
   params.append("scope", "https://graph.microsoft.com/.default");
 
   const response = await fetch(tokenEndpoint, {
@@ -50,6 +80,11 @@ const getAccessToken = async () => {
 
   if (!response.ok) {
     const errorText = await response.text();
+    if (response.status === 400 && errorText.includes("AADSTS7000216")) {
+      throw new Error(
+        "Failed to get access token: Azure rejected client credentials. Verify CLIENT_ID, TENANT_ID, CLIENT_SECRET value and secret expiry in Azure App Registration.",
+      );
+    }
     throw new Error(`Failed to get access token: ${errorText}`);
   }
 
@@ -74,9 +109,17 @@ export const uploadIncidentAttachment = async (req, res) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
+    const { siteId, driveId } = getGraphConfig();
+    if (!siteId || !driveId) {
+      return res.status(500).json({
+        message:
+          "Attachment upload is not configured. Missing SITE_ID or DRIVE_ID.",
+      });
+    }
+
     const accessToken = await getAccessToken();
     const storedName = buildStoredFileName(file.originalname);
-    const uploadUrl = `https://graph.microsoft.com/v1.0/sites/${process.env.SITE_ID}/drives/${process.env.DRIVE_ID}/root:/${encodeURIComponent(storedName)}:/content`;
+    const uploadUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/root:/${encodeURIComponent(storedName)}:/content`;
 
     const uploadResponse = await fetch(uploadUrl, {
       method: "PUT",
@@ -120,8 +163,16 @@ export const previewIncidentAttachment = async (req, res) => {
       return res.status(400).json({ message: "Attachment id is required" });
     }
 
+    const { siteId, driveId } = getGraphConfig();
+    if (!siteId || !driveId) {
+      return res.status(500).json({
+        message:
+          "Attachment preview is not configured. Missing SITE_ID or DRIVE_ID.",
+      });
+    }
+
     const accessToken = await getAccessToken();
-    const fileContentUrl = `https://graph.microsoft.com/v1.0/sites/${process.env.SITE_ID}/drives/${process.env.DRIVE_ID}/items/${id}/content`;
+    const fileContentUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/items/${id}/content`;
 
     const response = await fetch(fileContentUrl, {
       method: "GET",
