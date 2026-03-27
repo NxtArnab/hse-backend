@@ -4,11 +4,11 @@ import bcrypt from "bcrypt";
 const SALT_ROUNDS = 10;
 export const hashPassword = async (password) => {
   const salt = await bcrypt.genSalt(SALT_ROUNDS);
-  return await bcrypt.hash(password, salt);
+  return bcrypt.hash(password, salt);
 };
 
 export const checkPassword = async (password, hashedPassword) => {
-  return await bcrypt.compare(password, hashedPassword);
+  return bcrypt.compare(password, hashedPassword);
 };
 
 export const userExists = async (email) => {
@@ -32,13 +32,17 @@ export const getUserByEmail = async (email, hidePassword = false) => {
 
 export const createUser = async ({ name, email, password, roles }) => {
   const normalizedEmail = String(email).trim().toLowerCase();
+  const normalizedRoles = Array.isArray(roles)
+    ? roles.filter(Boolean)
+    : ["user"];
 
   const hashedPassword = await hashPassword(password);
   const user = new User({
     name,
     email: normalizedEmail,
     password: hashedPassword,
-    roles,
+    roles: normalizedRoles.length > 0 ? normalizedRoles : ["user"],
+    lastModifiedBy: normalizedEmail,
   });
 
   const newUser = await user.save();

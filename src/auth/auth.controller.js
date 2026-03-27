@@ -1,6 +1,12 @@
 import jwt from "jsonwebtoken";
 import { checkPassword, getUserByEmail } from "../user/user.service.js";
 
+const invalidCredentialsError = () => {
+  const error = new Error("Invalid email or password");
+  error.statusCode = 401;
+  return error;
+};
+
 export async function handleLoginUser(req, res, next) {
   try {
     const { email, password } = req.body;
@@ -13,16 +19,12 @@ export async function handleLoginUser(req, res, next) {
 
     const user = await getUserByEmail(String(email).trim().toLowerCase());
     if (!user) {
-      const error = new Error("Invalid email or password");
-      error.statusCode = 401;
-      throw error;
+      throw invalidCredentialsError();
     }
 
     const isPasswordValid = await checkPassword(password, user.password);
     if (!isPasswordValid) {
-      const error = new Error("Invalid email or password");
-      error.statusCode = 401;
-      throw error;
+      throw invalidCredentialsError();
     }
 
     // Generate JWT token
@@ -30,11 +32,12 @@ export async function handleLoginUser(req, res, next) {
       {
         id: user._id,
         email: user.email,
+        roles: Array.isArray(user.roles) ? user.roles : [],
         isAdmin: user.isAdmin,
         company: user.company?._id,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" },
+      { expiresIn: "1d" },
     );
 
     // Set HTTP-only cookie
@@ -43,13 +46,14 @@ export async function handleLoginUser(req, res, next) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 1 * 24 * 60 * 60 * 1000,
     });
 
     delete user.password;
 
     return res.status(200).json({
       message: "Login successful",
+      accessToken: token,
       user,
     });
   } catch (err) {

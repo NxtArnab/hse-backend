@@ -1,14 +1,23 @@
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import router from "./routes.js";
 import express from "express";
 import cookieParser from "cookie-parser";
 import initializeDB from "../utils/db.js";
 import cors from "cors";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const corsOptions = {
-  origin: ["http://localhost:3000"],
+  origin: [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+  ],
   credentials: true,
 };
 

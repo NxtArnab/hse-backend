@@ -1,157 +1,160 @@
-// Note : Distribution and Location are pending to be added....
-
 import mongoose from "mongoose";
 
+const attachmentSchema = new mongoose.Schema({
+  driveItemId: { type: String, required: false },
+  originalName: { type: String, required: false },
+  storedName: { type: String, required: false },
+  fileUrl: { type: String, required: false },
+  mimeType: { type: String, required: false },
+  fileSize: { type: Number, required: false },
+  extension: { type: String, required: false },
+}, { _id: false });
+
 const incidentSchema = new mongoose.Schema({
-    incident_title: {
-        type: String,
-        required: false
+  incidentNumber: {
+    type: Number,
+    required: false,
+    unique: true,
+    sparse: true,
+    min: 1,
+  },
+  incident_title: {
+    type: String,
+    required: false,
+  },
+  incident_eventTime: {
+    hour: {
+      type: Number,
+      min: 1,
+      max: 12,
+      required: false,
     },
-    incident_eventTime: {
-        hour: {
-            type: Number,
-            min: 1,
-            max: 12,
-            required: false
-        },
-        minute: {
-            type: Number,
-            min: 0,
-            max: 59,
-            required: false
-        },
-        period: {
-            type: String,
-            enum: ["AM", "PM"],
-            required: false
-        }
+    minute: {
+      type: Number,
+      min: 0,
+      max: 59,
+      required: false,
     },
-    incident_recordable: {
-        type: Boolean,
-        default: false
+    period: {
+      type: String,
+      enum: ["AM", "PM"],
+      required: false,
     },
-    incident_description: {
-        type: String,
-        required: true
-    },
-    incident_eventDate: {
-        type: Date,
-        required: true
-    },
-    incident_timeUnknown: {
-        type: Boolean,
-        default: false
-    },
-    incident_isPrivate: {
-        type: Boolean,
-        default: false
-    },
-    incident_attachment: {
-        originalName: {
-            type: String,
-            required: false
-        },
-        storedName: {
-            type: String,
-            required: false
-        },
-        fileUrl: {
-            type: String,
-            required: false
-        },
-        mimeType: {
-            type: String,
-            required: false
-        },
-        fileSize: {
-            type: Number,
-            required: false
-        },
-        extension: {
-            type: String,
-            required: false
-        }
-    },
-    investigation_contributing_behaviour: {
-        type: String,
-        enum: ["Equipment", "Environment"],
-        required: false
-    },
-    investigation_contributing_condition: {
-        type: String,
-        enum: ["Physical", "Psychological"],
-        required: false
-    },
-    recordTypeForms: [
-        {
-            template: {
-                type: String,
-                required: true
-            },
-            formData: {
-                type: mongoose.Schema.Types.Mixed,
-                required: true
-            }
-        }
-    ],
-    observation_description: {
-        type: String,
-        required: true
-    },
-    observation_status: {
-        type: String,
-        enum: ["Verified", "Not Effective", "Needs Follow-Up"]
-    },
-    observation_observedBy: {
-        type: String,
-        enum: ["Supervisor", "Safety Officer"],
-        required: true
-    },
-    observation_files: {
-        originalName: {
-            type: String,
-            required: false
-        },
-        storedName: {
-            type: String,
-            required: false
-        },
-        fileUrl: {
-            type: String,
-            required: false
-        },
-        mimeType: {
-            type: String,
-            required: false
-        },
-        fileSize: {
-            type: Number,
-            required: false
-        },
-        extension: {
-            type: String,
-            required: false
-        }
-    },
-    witnesses: [{
-        name: { type: String, required: true },
-        statement: { type: String, required: true },
-        contactNumber: { type: String },
-        dateOfStatement: { type: Date },
-        isRecorded: { type: Boolean, default: false }
-    }],
-    actions: [{
-        title: { type: String, required: true },
-        description: { type: String },
-        assignedTo: { type: String },
-        priority: { type: String, enum: ["low", "medium", "high", "urgent"], default: "medium" },
-        dueDate: { type: Date }
-    }],
-    createdBy: {
+  },
+  incident_recordable: {
+    type: Boolean,
+    default: false,
+  },
+  incident_description: {
+    type: String,
+    required: true,
+  },
+  incident_eventDate: {
+    type: Date,
+    required: true,
+  },
+  incident_timeUnknown: {
+    type: Boolean,
+    default: false,
+  },
+  incident_isPrivate: {
+    type: Boolean,
+    default: false,
+  },
+  distributionRoles: {
+    type: [String],
+    default: [],
+  },
+  distributionUsers: [
+    {
+      user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-        required: true
-    }
+        required: false,
+      },
+      name: {
+        type: String,
+        required: false,
+      },
+      email: {
+        type: String,
+        required: false,
+      },
+    },
+  ],
+  incident_attachment: attachmentSchema,
+  incident_attachments: {
+    type: [attachmentSchema],
+    default: [],
+  },
+  investigation_contributing_behaviour: {
+    type: String,
+    required: false,
+  },
+  investigation_contributing_condition: {
+    type: String,
+    required: false,
+  },
+  recordTypeForms: [
+    {
+      template: {
+        type: String,
+        required: true,
+      },
+      formData: {
+        type: mongoose.Schema.Types.Mixed,
+        required: true,
+      },
+    },
+  ],
+  observation_description: {
+    type: String,
+    required: true,
+  },
+  observation_status: {
+    type: String,
+    enum: ["Verified", "Not Effective", "Needs Follow-Up"],
+  },
+  observation_observedBy: {
+    type: String,
+    enum: ["Supervisor", "Safety Officer"],
+    required: true,
+  },
+  observation_files: attachmentSchema,
+  witnesses: [
+    {
+      name: { type: String, required: true },
+      statement: { type: String, required: true },
+      dateReceived: { type: Date, required: true },
+      attachment: attachmentSchema,
+    },
+  ],
+  actions: [
+    {
+      type: { type: String, enum: ["Corrective", "Preventive"], required: true },
+      description: { type: String, required: true },
+      attachment: attachmentSchema,
+      observation: {
+        observationDate: { type: Date, required: false },
+        observedBy: { type: String, required: false },
+        actionStatus: {
+          type: String,
+          enum: ["Open", "In Progress", "Completed", "Overdue", "Cancelled"],
+          default: "Open",
+        },
+        percentageComplete: { type: Number, min: 0, max: 100, default: 0 },
+        observationNotes: { type: String, required: false },
+        findingsOrBarriers: { type: String, required: false },
+        followUpRequired: { type: Boolean, default: false },
+        nextObservationDate: { type: Date, required: false },
+      },
+    },
+  ],
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
 }, { timestamps: true });
 
 const IncidentModel = mongoose.model("Incident", incidentSchema);

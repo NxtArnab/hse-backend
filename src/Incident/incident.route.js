@@ -1,13 +1,29 @@
-import incidentController from "./incident.controller.js";
-import { verify } from "../middlewares/authentication.middleware.js";
 import express from "express";
+import multer from "multer";
+import {
+  createIncident,
+  getIncidents,
+  getIncidentById,
+  updateIncident,
+  deleteIncident,
+  bulkDeleteIncidents,
+  uploadIncidentAttachment,
+  previewIncidentAttachment,
+} from "./incident.controller.js";
+import { verify } from "../middlewares/authentication.middleware.js";
 
 const IncidentRouter = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
-IncidentRouter.post("/", verify, incidentController.incidentController);
-IncidentRouter.get("/", verify, incidentController.getAllIncidents);
-IncidentRouter.get("/:id", verify, incidentController.getIncidentById);
-IncidentRouter.delete("/bulk-delete", verify, incidentController.deleteMultipleIncidents);
-IncidentRouter.delete("/:id", verify, incidentController.deleteIncident);
+IncidentRouter.use(verify);
+
+IncidentRouter.post("/attachment-upload", upload.single("file"), uploadIncidentAttachment);
+IncidentRouter.get("/attachment-preview/:id", previewIncidentAttachment);
+IncidentRouter.post("/", createIncident);
+IncidentRouter.get("/", getIncidents);
+IncidentRouter.get("/:id", getIncidentById);
+IncidentRouter.put("/:id", updateIncident);
+IncidentRouter.delete("/bulk-delete", bulkDeleteIncidents);
+IncidentRouter.delete("/:id", deleteIncident);
 
 export default IncidentRouter;
