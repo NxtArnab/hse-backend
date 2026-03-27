@@ -11,6 +11,13 @@ const attachmentSchema = new mongoose.Schema({
 }, { _id: false });
 
 const incidentSchema = new mongoose.Schema({
+    incidentNumber: {
+        type: Number,
+        required: false,
+        unique: true,
+        sparse: true,
+        min: 1,
+    },
     incident_title: {
         type: String,
         required: false

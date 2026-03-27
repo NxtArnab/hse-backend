@@ -32,6 +32,7 @@ export async function handleLoginUser(req, res, next) {
       {
         id: user._id,
         email: user.email,
+        roles: Array.isArray(user.roles) ? user.roles : [],
         isAdmin: user.isAdmin,
         company: user.company?._id,
       },

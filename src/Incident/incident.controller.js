@@ -1,6 +1,94 @@
 import path from "path";
 import IncidentModel from "./incident.model.js";
 
+const normalizeRoleKey = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+
+const isSystemAdmin = (user = {}) => {
+  if (user?.isAdmin === true) return true;
+
+  const roles = Array.isArray(user?.roles) ? user.roles : [];
+  return roles.some((role) => {
+    const normalized = normalizeRoleKey(role);
+    return normalized === "admin" || normalized === "projectadmin" || normalized === "systemadmin";
+  });
+};
+
+const canManageIncident = (incident, user = {}) => {
+  if (!incident || !user?.id) return false;
+  if (isSystemAdmin(user)) return true;
+
+  return String(incident.createdBy) === String(user.id);
+};
+
+const ensureIncidentNumbers = async () => {
+  const numberedCount = await IncidentModel.countDocuments({
+    incidentNumber: { $exists: true, $ne: null },
+  });
+
+  if (numberedCount === 0) {
+    const incidents = await IncidentModel.find()
+      .select("_id")
+      .sort({ createdAt: 1, _id: 1 })
+      .lean();
+
+    if (incidents.length === 0) return;
+
+    await IncidentModel.bulkWrite(
+      incidents.map((incident, index) => ({
+        updateOne: {
+          filter: { _id: incident._id },
+          update: { $set: { incidentNumber: index + 1 } },
+        },
+      }))
+    );
+
+    return;
+  }
+
+  const latestIncident = await IncidentModel.findOne({
+    incidentNumber: { $exists: true, $ne: null },
+  })
+    .sort({ incidentNumber: -1 })
+    .select("incidentNumber")
+    .lean();
+
+  let nextIncidentNumber = Number(latestIncident?.incidentNumber || 0) + 1;
+
+  const missingIncidents = await IncidentModel.find({
+    $or: [
+      { incidentNumber: { $exists: false } },
+      { incidentNumber: null },
+    ],
+  })
+    .select("_id")
+    .sort({ createdAt: 1, _id: 1 })
+    .lean();
+
+  if (missingIncidents.length === 0) return;
+
+  await IncidentModel.bulkWrite(
+    missingIncidents.map((incident) => ({
+      updateOne: {
+        filter: { _id: incident._id },
+        update: { $set: { incidentNumber: nextIncidentNumber++ } },
+      },
+    }))
+  );
+};
+
+const getNextIncidentNumber = async () => {
+  await ensureIncidentNumbers();
+
+  const latestIncident = await IncidentModel.findOne({
+    incidentNumber: { $exists: true, $ne: null },
+  })
+    .sort({ incidentNumber: -1 })
+    .select("incidentNumber")
+    .lean();
+
+  return Number(latestIncident?.incidentNumber || 0) + 1;
+};
+
 const normalizeAttachments = (incident_attachments, incident_attachment) => {
   if (Array.isArray(incident_attachments)) return incident_attachments.filter(Boolean);
   if (incident_attachment) return [incident_attachment];
@@ -204,9 +292,11 @@ export const previewIncidentAttachment = async (req, res) => {
 export const createIncident = async (req, res) => {
   try {
     const incidentPayload = buildIncidentPayload(req.body);
+    const incidentNumber = await getNextIncidentNumber();
 
     const incident = await IncidentModel.create({
       ...incidentPayload,
+      incidentNumber,
       createdBy: req.user.id,
     });
 
@@ -221,6 +311,8 @@ export const createIncident = async (req, res) => {
 
 export const getIncidents = async (req, res) => {
   try {
+    await ensureIncidentNumbers();
+
     const incidents = await IncidentModel.find()
       .populate("createdBy", "name email")
       .sort({ createdAt: -1 });
@@ -234,6 +326,7 @@ export const getIncidents = async (req, res) => {
 export const getIncidentById = async (req, res) => {
   try {
     const { id } = req.params;
+    await ensureIncidentNumbers();
     const incident = await IncidentModel.findById(id).populate("createdBy", "name email");
     if (!incident) {
       return res.status(404).json({ message: "Incident Not Found" });
@@ -249,6 +342,15 @@ export const updateIncident = async (req, res) => {
   try {
     const { id } = req.params;
     const incidentPayload = buildIncidentPayload(req.body);
+
+    const existingIncident = await IncidentModel.findById(id).select("createdBy");
+    if (!existingIncident) {
+      return res.status(404).json({ message: "Incident Not Found" });
+    }
+
+    if (!canManageIncident(existingIncident, req.user)) {
+      return res.status(403).json({ message: "You are not authorized to update this incident" });
+    }
 
     const updatedIncident = await IncidentModel.findByIdAndUpdate(
       id,
@@ -270,6 +372,16 @@ export const updateIncident = async (req, res) => {
 export const deleteIncident = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const existingIncident = await IncidentModel.findById(id).select("createdBy");
+    if (!existingIncident) {
+      return res.status(404).json({ message: "Incident Not Found" });
+    }
+
+    if (!canManageIncident(existingIncident, req.user)) {
+      return res.status(403).json({ message: "You are not authorized to delete this incident" });
+    }
+
     const deletedIncident = await IncidentModel.findByIdAndDelete(id);
 
     if (!deletedIncident) {
@@ -291,7 +403,23 @@ export const bulkDeleteIncidents = async (req, res) => {
       return res.status(400).json({ message: "Invalid IDs provided" });
     }
 
-    await IncidentModel.deleteMany({ _id: { $in: ids } });
+    if (isSystemAdmin(req.user)) {
+      await IncidentModel.deleteMany({ _id: { $in: ids } });
+      return res.status(200).json({ message: "Incidents Deleted Successfully" });
+    }
+
+    const unauthorizedCount = await IncidentModel.countDocuments({
+      _id: { $in: ids },
+      createdBy: { $ne: req.user.id },
+    });
+
+    if (unauthorizedCount > 0) {
+      return res.status(403).json({
+        message: "You can only delete incidents created by you",
+      });
+    }
+
+    await IncidentModel.deleteMany({ _id: { $in: ids }, createdBy: req.user.id });
     res.status(200).json({ message: "Incidents Deleted Successfully" });
   } catch (error) {
     console.log(error);
