@@ -7,10 +7,9 @@ const investigationOptionSchema = new mongoose.Schema(
       enum: ["condition", "behaviour"],
       required: true,
     },
-    label: {
-      type: String,
-      required: true,
-      trim: true,
+    values: {
+      type: [String],
+      default: [],
     },
     isActive: {
       type: Boolean,
@@ -20,6 +19,6 @@ const investigationOptionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-investigationOptionSchema.index({ type: 1, label: 1 }, { unique: true });
+investigationOptionSchema.index({ type: 1 }, { unique: true });
 
 export default mongoose.model("InvestigationOption", investigationOptionSchema);

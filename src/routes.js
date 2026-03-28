@@ -3,12 +3,14 @@ import IncidentRouter from "./Incident/incident.route.js";
 import adminRouter from "./admin/admin.routes.js";
 import UserRouter from "./user/user.router.js";
 import authRouter from "./auth/auth.routes.js";
+import notificationRouter from "./notification/notification.route.js";
 
 const router = express.Router();
 
 router.use("/auth", authRouter);
 router.use("/user", UserRouter);
 router.use("/incident", IncidentRouter);
+router.use("/notification", notificationRouter);
 router.use("/", adminRouter);
 
 export default router;

@@ -1,5 +1,8 @@
 import path from "path";
+import mongoose from "mongoose";
 import IncidentModel from "./incident.model.js";
+import { sendBulkNotifications } from "../../utils/sendNotification.js";
+import User from "../user/user.model.js";
 
 const normalizeRoleKey = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z]/g, "");
 
@@ -95,6 +98,38 @@ const normalizeAttachments = (incident_attachments, incident_attachment) => {
   return [];
 };
 
+const normalizeActions = (actions) => {
+  if (!Array.isArray(actions)) return [];
+
+  return actions.map((action = {}) => {
+    const { type, ...rest } = action;
+    return rest;
+  });
+};
+
+const getAssignedToRecipients = (actions = []) => Array.from(
+  new Set(
+    (Array.isArray(actions) ? actions : [])
+      .map((action) => action?.assignedTo)
+      .map((value) => String(value || "").trim())
+      .filter((value) => mongoose.Types.ObjectId.isValid(value)),
+  ),
+);
+
+const notifyAssignedUsers = async ({ incident, recipientIds = [], senderId }) => {
+  if (!incident || recipientIds.length === 0) return;
+
+  const incidentLabel = incident.incident_title || `Incident ${incident.incidentNumber || ""}`.trim() || "an incident";
+  const message = `You have been assigned an action for "${incidentLabel}".`;
+
+  await sendBulkNotifications(recipientIds, {
+    senderId,
+    message,
+    type: "incident_action_assigned",
+    link: "/hse",
+  });
+};
+
 const buildIncidentPayload = (payload) => {
   const normalizedAttachments = normalizeAttachments(payload.incident_attachments, payload.incident_attachment);
 
@@ -103,6 +138,7 @@ const buildIncidentPayload = (payload) => {
     incident_eventTime: payload.incident_eventTime,
     incident_recordable: payload.incident_recordable,
     incident_description: payload.incident_description,
+    location: payload.location,
     incident_eventDate: payload.incident_eventDate,
     incident_timeUnknown: payload.incident_timeUnknown,
     incident_isPrivate: payload.incident_isPrivate,
@@ -112,14 +148,113 @@ const buildIncidentPayload = (payload) => {
     incident_attachments: normalizedAttachments,
     investigation_contributing_behaviour: payload.investigation_contributing_behaviour,
     investigation_contributing_condition: payload.investigation_contributing_condition,
+    investigation_comments: payload.investigation_comments,
+    investigation_files: Array.isArray(payload.investigation_files) ? payload.investigation_files.filter(Boolean) : [],
+    investigation_authority: payload.investigation_authority || null,
+    investigation_signature: payload.investigation_signature || null,
     recordTypeForms: payload.recordTypeForms,
     observation_description: payload.observation_description,
     observation_status: payload.observation_status,
     observation_observedBy: payload.observation_observedBy,
     observation_files: payload.observation_files,
     witnesses: payload.witnesses,
-    actions: payload.actions,
+    actions: normalizeActions(payload.actions),
   };
+};
+
+const getObservedByRecipients = (actions = []) => Array.from(
+  new Set(
+    (Array.isArray(actions) ? actions : [])
+      .map((action) => action?.observation?.observedBy)
+      .map((value) => String(value || "").trim())
+      .filter((value) => mongoose.Types.ObjectId.isValid(value)),
+  ),
+);
+
+const getIncidentLabel = (incident) =>
+  incident?.incident_title || `Incident ${incident?.incidentNumber || ""}`.trim() || "an incident";
+
+const notifyObservedUsers = async ({ incident, recipientIds = [], senderId, isNewAssignment = false }) => {
+  if (!incident || recipientIds.length === 0) return;
+
+  const incidentLabel = getIncidentLabel(incident);
+  const message = isNewAssignment
+    ? `You have been selected in Observed By for "${incidentLabel}".`
+    : `You have been assigned as an observer for "${incidentLabel}".`;
+
+  await sendBulkNotifications(recipientIds, {
+    senderId,
+    message,
+    type: isNewAssignment ? "incident_update" : "incident_observation",
+    link: "/hse",
+  });
+};
+
+const notifyInvestigationAuthorityAssigned = async ({ incident, recipientId, senderId, isNewAssignment = false }) => {
+  if (!incident) return;
+
+  const normalizedRecipientId = String(recipientId || "").trim();
+  if (!mongoose.Types.ObjectId.isValid(normalizedRecipientId)) return;
+  if (String(senderId || "") === normalizedRecipientId) return;
+
+  const incidentLabel = getIncidentLabel(incident);
+  const message = isNewAssignment
+    ? `You have been selected as Investigation Authority for "${incidentLabel}". Please complete the investigation process.`
+    : `You have been assigned as Investigation Authority for "${incidentLabel}". Please complete the investigation process.`;
+
+  await sendBulkNotifications([normalizedRecipientId], {
+    senderId,
+    message,
+    type: "incident_update",
+    link: "/hse",
+  });
+};
+
+const getSafetyOfficerRecipientIds = async () => {
+  const users = await User.find({
+    isActive: { $ne: false },
+    roles: { $elemMatch: { $regex: /^\s*safety[\s_-]*officer\s*$/i } },
+  })
+    .select("_id")
+    .lean();
+
+  return users
+    .map((user) => String(user?._id || "").trim())
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
+};
+
+const notifySafetyOfficersForInvestigationSignature = async ({ incident, senderId }) => {
+  if (!incident) return;
+
+  const incidentLabel = getIncidentLabel(incident);
+  const recipientIds = await getSafetyOfficerRecipientIds();
+  const filteredRecipientIds = recipientIds.filter((id) => String(id) !== String(senderId));
+
+  if (filteredRecipientIds.length === 0) return;
+
+  await sendBulkNotifications(filteredRecipientIds, {
+    senderId,
+    message: `Investigation authority signed "${incidentLabel}". Safety Officer, please check the further process/step.`,
+    type: "incident_update",
+    link: "/hse",
+  });
+};
+
+const notifySafetyOfficersForObserverCompleted = async ({ incident, senderId }) => {
+  if (!incident) return;
+
+  const incidentLabel = getIncidentLabel(incident);
+  const recipientIds = await getSafetyOfficerRecipientIds();
+  const filteredRecipientIds = recipientIds.filter((id) => String(id) !== String(senderId));
+
+  if (filteredRecipientIds.length === 0) return;
+
+  await sendBulkNotifications(filteredRecipientIds, {
+    senderId,
+    message: `Observer has completed and signed "${incidentLabel}".`,
+    type: "incident_update",
+    link: "/hse",
+  });
 };
 
 const getEnv = (...keys) => {
@@ -300,6 +435,35 @@ export const createIncident = async (req, res) => {
       createdBy: req.user.id,
     });
 
+    await notifyObservedUsers({
+      incident,
+      recipientIds: getObservedByRecipients(incidentPayload.actions),
+      senderId: req.user.id,
+      isNewAssignment: false,
+    });
+
+    await notifyAssignedUsers({
+      incident,
+      recipientIds: getAssignedToRecipients(incidentPayload.actions),
+      senderId: req.user.id,
+    });
+
+    if (incidentPayload?.investigation_authority) {
+      await notifyInvestigationAuthorityAssigned({
+        incident,
+        recipientId: incidentPayload.investigation_authority,
+        senderId: req.user.id,
+        isNewAssignment: false,
+      });
+    }
+
+    if (incidentPayload?.investigation_signature?.dataUrl) {
+      await notifySafetyOfficersForInvestigationSignature({
+        incident,
+        senderId: req.user.id,
+      });
+    }
+
     res
       .status(201)
       .json({ message: "Incident Created Successfully", data: incident });
@@ -326,8 +490,7 @@ export const getIncidents = async (req, res) => {
 export const getIncidentById = async (req, res) => {
   try {
     const { id } = req.params;
-    await ensureIncidentNumbers();
-    const incident = await IncidentModel.findById(id).populate("createdBy", "name email");
+    const incident = await IncidentModel.findById(id);
     if (!incident) {
       return res.status(404).json({ message: "Incident Not Found" });
     }
@@ -343,7 +506,7 @@ export const updateIncident = async (req, res) => {
     const { id } = req.params;
     const incidentPayload = buildIncidentPayload(req.body);
 
-    const existingIncident = await IncidentModel.findById(id).select("createdBy");
+    const existingIncident = await IncidentModel.findById(id).select("createdBy actions incident_title incidentNumber investigation_signature investigation_authority");
     if (!existingIncident) {
       return res.status(404).json({ message: "Incident Not Found" });
     }
@@ -362,13 +525,76 @@ export const updateIncident = async (req, res) => {
       return res.status(404).json({ message: "Incident Not Found" });
     }
 
+    const previousRecipients = new Set(getObservedByRecipients(existingIncident.actions));
+    const nextRecipients = getObservedByRecipients(incidentPayload.actions);
+    const newlyAssignedRecipients = nextRecipients.filter((recipientId) => !previousRecipients.has(recipientId));
+
+    await notifyObservedUsers({
+      incident: updatedIncident,
+      recipientIds: newlyAssignedRecipients,
+      senderId: req.user.id,
+      isNewAssignment: true,
+    });
+
+    const previousAssigned = new Set(getAssignedToRecipients(existingIncident.actions));
+    const nextAssigned = getAssignedToRecipients(incidentPayload.actions);
+    const newlyAssignedActionUsers = nextAssigned.filter((id) => !previousAssigned.has(id));
+
+    await notifyAssignedUsers({
+      incident: updatedIncident,
+      recipientIds: newlyAssignedActionUsers,
+      senderId: req.user.id,
+    });
+
+    const previousInvestigationAuthorityId = String(existingIncident?.investigation_authority || "").trim();
+    const nextInvestigationAuthorityId = String(incidentPayload?.investigation_authority || "").trim();
+    const investigationAuthorityWasJustAssigned = Boolean(nextInvestigationAuthorityId)
+      && nextInvestigationAuthorityId !== previousInvestigationAuthorityId;
+
+    if (investigationAuthorityWasJustAssigned) {
+      await notifyInvestigationAuthorityAssigned({
+        incident: updatedIncident,
+        recipientId: nextInvestigationAuthorityId,
+        senderId: req.user.id,
+        isNewAssignment: true,
+      });
+    }
+
+    const previousSignatureDataUrl = String(existingIncident?.investigation_signature?.dataUrl || "").trim();
+    const nextSignatureDataUrl = String(incidentPayload?.investigation_signature?.dataUrl || "").trim();
+    const signatureWasJustSaved = Boolean(nextSignatureDataUrl) && nextSignatureDataUrl !== previousSignatureDataUrl;
+
+    if (signatureWasJustSaved) {
+      await notifySafetyOfficersForInvestigationSignature({
+        incident: updatedIncident,
+        senderId: req.user.id,
+      });
+    }
+
+    // Detect if any observation was just completed with a new observer signature
+    const observerJustSigned = (incidentPayload.actions || []).some((newAction, i) => {
+      const newObs = newAction?.observation;
+      if (!newObs) return false;
+      if (String(newObs.actionStatus || '').trim() !== 'Completed') return false;
+      const newSigUrl = String(newObs.observation_signature?.dataUrl || '').trim();
+      if (!newSigUrl) return false;
+      const oldSigUrl = String(existingIncident.actions?.[i]?.observation?.observation_signature?.dataUrl || '').trim();
+      return newSigUrl !== oldSigUrl;
+    });
+
+    if (observerJustSigned) {
+      await notifySafetyOfficersForObserverCompleted({
+        incident: updatedIncident,
+        senderId: req.user.id,
+      });
+    }
+
     res.status(200).json({ message: "Incident Updated Successfully", data: updatedIncident });
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
-
 export const deleteIncident = async (req, res) => {
   try {
     const { id } = req.params;

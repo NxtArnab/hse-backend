@@ -49,6 +49,10 @@ const incidentSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  location: {
+    type: String,
+    required: false,
+  },
   incident_eventDate: {
     type: Date,
     required: true,
@@ -95,6 +99,24 @@ const incidentSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
+  investigation_comments: {
+    type: String,
+    required: false,
+  },
+  investigation_files: {
+    type: [attachmentSchema],
+    default: [],
+  },
+  investigation_authority: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: false,
+  },
+  investigation_signature: {
+    dataUrl: { type: String, required: false },
+    signedAt: { type: Date, required: false },
+    signedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
+  },
   recordTypeForms: [
     {
       template: {
@@ -131,12 +153,13 @@ const incidentSchema = new mongoose.Schema({
   ],
   actions: [
     {
-      type: { type: String, enum: ["Corrective", "Preventive"], required: true },
       description: { type: String, required: true },
+      assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
       attachment: attachmentSchema,
       observation: {
         observationDate: { type: Date, required: false },
         observedBy: { type: String, required: false },
+        attachment: attachmentSchema,
         actionStatus: {
           type: String,
           enum: ["Open", "In Progress", "Completed", "Overdue", "Cancelled"],
@@ -147,7 +170,12 @@ const incidentSchema = new mongoose.Schema({
         findingsOrBarriers: { type: String, required: false },
         followUpRequired: { type: Boolean, default: false },
         nextObservationDate: { type: Date, required: false },
-      },
+          observation_signature: {
+            dataUrl: { type: String, required: false },
+            signedAt: { type: Date, required: false },
+            signedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
+          },
+        },
     },
   ],
   createdBy: {
