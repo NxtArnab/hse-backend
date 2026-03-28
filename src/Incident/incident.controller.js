@@ -1,8 +1,14 @@
 import path from "path";
 import mongoose from "mongoose";
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
 import IncidentModel from "./incident.model.js";
 import { sendBulkNotifications } from "../../utils/sendNotification.js";
 import User from "../user/user.model.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 const normalizeRoleKey = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z]/g, "");
 
