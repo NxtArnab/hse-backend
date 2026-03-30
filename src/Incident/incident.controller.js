@@ -22,11 +22,25 @@ const isSystemAdmin = (user = {}) => {
   });
 };
 
+const toObjectIdString = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    if (value?._id) return String(value._id);
+    if (value?.id) return String(value.id);
+  }
+  return String(value);
+};
+
 const canManageIncident = (incident, user = {}) => {
   if (!incident || !user?.id) return false;
   if (isSystemAdmin(user)) return true;
 
-  return String(incident.createdBy) === String(user.id);
+  const userId = String(user.id);
+  const createdById = toObjectIdString(incident.createdBy);
+  const investigationAuthorityId = toObjectIdString(incident.investigation_authority);
+
+  return createdById === userId || investigationAuthorityId === userId;
 };
 
 const ensureIncidentNumbers = async () => {
@@ -152,6 +166,7 @@ const buildIncidentPayload = (payload) => {
     distributionUsers: payload.distributionUsers,
     incident_attachment: normalizedAttachments[0] || payload.incident_attachment || null,
     incident_attachments: normalizedAttachments,
+    hazard: payload.hazard,
     investigation_contributing_behaviour: payload.investigation_contributing_behaviour,
     investigation_contributing_condition: payload.investigation_contributing_condition,
     investigation_comments: payload.investigation_comments,
@@ -485,6 +500,7 @@ export const getIncidents = async (req, res) => {
 
     const incidents = await IncidentModel.find()
       .populate("createdBy", "name email")
+      .populate("investigation_authority", "name email")
       .sort({ createdAt: -1 });
     res.status(200).json({ data: incidents });
   } catch (error) {
@@ -496,7 +512,9 @@ export const getIncidents = async (req, res) => {
 export const getIncidentById = async (req, res) => {
   try {
     const { id } = req.params;
-    const incident = await IncidentModel.findById(id);
+    const incident = await IncidentModel.findById(id)
+      .populate("createdBy", "name email")
+      .populate("investigation_authority", "name email");
     if (!incident) {
       return res.status(404).json({ message: "Incident Not Found" });
     }

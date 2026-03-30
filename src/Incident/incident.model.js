@@ -91,6 +91,10 @@ const incidentSchema = new mongoose.Schema({
     type: [attachmentSchema],
     default: [],
   },
+  hazard: {
+    type: String,
+    required: false,
+  },
   investigation_contributing_behaviour: {
     type: String,
     required: false,
