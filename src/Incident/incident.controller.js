@@ -39,8 +39,12 @@ const canManageIncident = (incident, user = {}) => {
   const userId = String(user.id);
   const createdById = toObjectIdString(incident.createdBy);
   const investigationAuthorityId = toObjectIdString(incident.investigation_authority);
+  
+  // Allow observers to manage incidents
+  const isObserver = incident?.actions && Array.isArray(incident.actions) && 
+    incident.actions.some((action) => String(action?.observation?.observedBy || "").trim() === userId);
 
-  return createdById === userId || investigationAuthorityId === userId;
+  return createdById === userId || investigationAuthorityId === userId || isObserver;
 };
 
 const ensureIncidentNumbers = async () => {
@@ -117,6 +121,62 @@ const normalizeAttachments = (incident_attachments, incident_attachment) => {
   if (incident_attachment) return [incident_attachment];
   return [];
 };
+
+const normalizeInvestigationFiles = (files = []) => (
+  (Array.isArray(files) ? files : [])
+    .filter(Boolean)
+    .map((file = {}) => ({
+      driveItemId: String(file?.driveItemId || "").trim(),
+      originalName: String(file?.originalName || "").trim(),
+      storedName: String(file?.storedName || "").trim(),
+      fileUrl: String(file?.fileUrl || "").trim(),
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+);
+
+const normalizeInvestigationState = (source = {}) => ({
+  hazard: String(source?.hazard || "").trim(),
+  contributingBehaviour: String(source?.investigation_contributing_behaviour || "").trim(),
+  contributingCondition: String(source?.investigation_contributing_condition || "").trim(),
+  comments: String(source?.investigation_comments || "").trim(),
+  authority: toObjectIdString(source?.investigation_authority),
+  signature: {
+    dataUrl: String(source?.investigation_signature?.dataUrl || "").trim(),
+    signedBy: toObjectIdString(source?.investigation_signature?.signedBy),
+    signedAt: source?.investigation_signature?.signedAt
+      ? new Date(source.investigation_signature.signedAt).toISOString()
+      : "",
+  },
+  files: normalizeInvestigationFiles(source?.investigation_files),
+});
+
+const hasSignedInvestigation = (source = {}) => Boolean(
+  String(source?.investigation_signature?.dataUrl || "").trim()
+);
+
+const normalizeSingleAttachment = (file = null) => {
+  if (!file) return null;
+
+  return {
+    driveItemId: String(file?.driveItemId || "").trim(),
+    originalName: String(file?.originalName || "").trim(),
+    storedName: String(file?.storedName || "").trim(),
+    fileUrl: String(file?.fileUrl || "").trim(),
+  };
+};
+
+const normalizeWitnesses = (witnesses = []) => (
+  (Array.isArray(witnesses) ? witnesses : []).map((witness = {}) => ({
+    name: String(witness?.name || "").trim(),
+    statement: String(witness?.statement || "").trim(),
+    dateReceived: witness?.dateReceived ? new Date(witness.dateReceived).toISOString() : "",
+    attachment: normalizeSingleAttachment(witness?.attachment || null),
+  }))
+);
+
+const normalizeObservedByLocks = (actions = []) => (
+  (Array.isArray(actions) ? actions : []).map((action = {}) => String(action?.observation?.observedBy || "").trim())
+);
 
 const normalizeActions = (actions) => {
   if (!Array.isArray(actions)) return [];
@@ -530,13 +590,58 @@ export const updateIncident = async (req, res) => {
     const { id } = req.params;
     const incidentPayload = buildIncidentPayload(req.body);
 
-    const existingIncident = await IncidentModel.findById(id).select("createdBy actions incident_title incidentNumber investigation_signature investigation_authority");
+    const existingIncident = await IncidentModel.findById(id).select("createdBy actions witnesses incident_title incidentNumber investigation_signature investigation_authority hazard investigation_contributing_behaviour investigation_contributing_condition investigation_comments investigation_files");
     if (!existingIncident) {
       return res.status(404).json({ message: "Incident Not Found" });
     }
 
     if (!canManageIncident(existingIncident, req.user)) {
       return res.status(403).json({ message: "You are not authorized to update this incident" });
+    }
+
+    // Determine if user is observer-only (not creator or authority)
+    const userId = String(req.user.id);
+    const createdById = toObjectIdString(existingIncident.createdBy);
+    const authorityId = toObjectIdString(existingIncident.investigation_authority);
+    const isObserverOnly = !isSystemAdmin(req.user) && createdById !== userId && authorityId !== userId;
+
+    // Skip investigation and witness checks for observers - they can only edit observations
+    if (!isObserverOnly && hasSignedInvestigation(existingIncident)) {
+      const previousInvestigationState = normalizeInvestigationState(existingIncident);
+      const nextInvestigationState = normalizeInvestigationState(incidentPayload);
+
+      if (JSON.stringify(previousInvestigationState) !== JSON.stringify(nextInvestigationState)) {
+        return res.status(400).json({
+          message: "Investigation can no longer be edited after the Investigation Authority signature is saved.",
+        });
+      }
+    }
+
+    // Skip witness check for observers
+    if (!isObserverOnly) {
+      const previousWitnesses = normalizeWitnesses(existingIncident.witnesses);
+      const nextWitnesses = normalizeWitnesses(incidentPayload.witnesses);
+
+      const existingWitnessesWereModified = nextWitnesses.length < previousWitnesses.length
+        || previousWitnesses.some((witness, index) => JSON.stringify(witness) !== JSON.stringify(nextWitnesses[index] || null));
+
+      if (existingWitnessesWereModified) {
+        return res.status(400).json({
+          message: "Existing witness records cannot be edited after incident creation. You can only add new witness records.",
+        });
+      }
+    }
+
+    const previousObservedByLocks = normalizeObservedByLocks(existingIncident.actions);
+    const nextObservedByLocks = normalizeObservedByLocks(incidentPayload.actions);
+    const observedByWasChangedAfterBeingSet = previousObservedByLocks.some((observedBy, index) => (
+      observedBy && observedBy !== String(nextObservedByLocks[index] || "").trim()
+    ));
+
+    if (observedByWasChangedAfterBeingSet) {
+      return res.status(400).json({
+        message: "Observed By cannot be changed once it has been set.",
+      });
     }
 
     const updatedIncident = await IncidentModel.findByIdAndUpdate(
