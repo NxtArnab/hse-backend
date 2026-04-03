@@ -3,7 +3,7 @@ import { COLLECTION_CREATE } from "../src/constant.js";
 
 const initializeDB = () =>
   mongoose
-    .connect(`${process.env.BASE_URL}/${COLLECTION_CREATE}`)
+    .connect(`${process.env.BASE_URL}/${COLLECTION_CREATE}?authSource=admin`)
     .then(() => {
       console.log("Database Connected");
     })
