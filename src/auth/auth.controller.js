@@ -50,6 +50,7 @@ export async function handleLoginUser(req, res, next) {
     });
 
     delete user.password;
+    delete user.pin;
 
     return res.status(200).json({
       message: "Login successful",

@@ -25,6 +25,7 @@ export const getUserByEmail = async (email, hidePassword = false) => {
 
   if (hidePassword && user) {
     delete user.password;
+    delete user.pin;
   }
 
   return user;

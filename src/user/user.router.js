@@ -5,6 +5,8 @@ import {
   handleUpdateUser,
   handleGetAllUsers,
   hardDeleteUser,
+  handleUpdatePin,
+  handleVerifyPin,
 } from "./user.controller.js";
 import { verify } from "../middlewares/authentication.middleware.js";
 
@@ -15,6 +17,8 @@ const userRouter = express.Router();
 userRouter.get("/all", verify, handleGetAllUsers); // /api/v1/user/all
 userRouter.post("/create-user", handleCreateUser);
 userRouter.put("/update-user/:id", verify, handleUpdateUser);
+userRouter.patch("/update-pin/:id", verify, handleUpdatePin);
+userRouter.post("/verify-pin/:id", verify, handleVerifyPin);
 userRouter.patch("/soft-delete/:id", verify, softDeleteUser);
 userRouter.delete("/:id", verify, hardDeleteUser);
 

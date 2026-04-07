@@ -1,13 +1,14 @@
 import checkRequiredFields from "../../utils/checkRequiredFields.js";
 import User from "./user.model.js";
 import { createUser, userExists } from "./user.service.js";
+import { checkPassword, hashPassword } from "./user.service.js";
 
 const getActor = (req) => req.user?.email || req.user?.id || "system";
 
 export async function handleGetAllUsers(req, res, next) {
   try {
     const query = req.query || {};
-    const users = await User.find(query).select("-password -__v").lean();
+    const users = await User.find(query).select("-password -pin -__v").lean();
     return res.json(users);
   } catch (err) {
     return next(err);
@@ -107,6 +108,73 @@ export async function hardDeleteUser(req, res, next) {
     }
 
     return res.json({ message: "User hard deleted successfully" });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export async function handleUpdatePin(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { pin } = req.body;
+    checkRequiredFields({ id, pin });
+
+    if (req.user?.id !== id && !req.user?.isAdmin) {
+      const error = new Error("You can only update your own PIN");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const hashedPin = await hashPassword(String(pin));
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      {
+        pin: hashedPin,
+        lastModifiedBy: getActor(req),
+      },
+      { new: true },
+    ).select("-password -pin -__v");
+
+    if (!updatedUser) {
+      const error = new Error("User not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return res.json({ success: true, message: "PIN updated successfully" });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export async function handleVerifyPin(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { pin } = req.body;
+    checkRequiredFields({ id, pin });
+
+    if (req.user?.id !== id && !req.user?.isAdmin) {
+      const error = new Error("You can only verify your own PIN");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const user = await User.findById(id).select("pin");
+    if (!user) {
+      const error = new Error("User not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (!user.pin) {
+      const error = new Error("PIN not set");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const isMatch = await checkPassword(String(pin), user.pin);
+    return res.json({ success: isMatch });
   } catch (err) {
     return next(err);
   }
