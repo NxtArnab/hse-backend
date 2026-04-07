@@ -405,6 +405,142 @@ const buildStoredFileName = (originalName) => {
   return `${parsed.name}_${dateStr}_${timeStr}${parsed.ext}`;
 };
 
+const DOCUMENT_UPLOAD_FOLDER = "Document";
+const SIGNATURE_UPLOAD_FOLDER = "Signature";
+
+const DATA_URL_IMAGE_REGEX = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/;
+
+const getExtensionFromMimeType = (mimeType = "") => {
+  const normalized = String(mimeType).toLowerCase();
+  if (normalized === "image/jpeg") return ".jpg";
+  if (normalized === "image/png") return ".png";
+  if (normalized === "image/webp") return ".webp";
+  if (normalized === "image/gif") return ".gif";
+  if (normalized === "image/svg+xml") return ".svg";
+  return "";
+};
+
+const parseDataUrlImage = (value = "") => {
+  const match = String(value).trim().match(DATA_URL_IMAGE_REGEX);
+  if (!match) return null;
+
+  const mimeType = match[1];
+  const base64Data = match[2];
+
+  return {
+    mimeType,
+    buffer: Buffer.from(base64Data, "base64"),
+  };
+};
+
+const uploadBufferToDrive = async ({ siteId, driveId, accessToken, folderName, fileName, mimeType, buffer }) => {
+  const encodedPath = `${encodeURIComponent(folderName)}/${encodeURIComponent(fileName)}`;
+  const uploadUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/root:/${encodedPath}:/content`;
+
+  const uploadResponse = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": mimeType,
+    },
+    body: buffer,
+  });
+
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text();
+    throw new Error(`Failed to upload signature: ${errorText}`);
+  }
+
+  return uploadResponse.json();
+};
+
+const uploadSignatureIfNeeded = async ({ signature, filePrefix, siteId, driveId, accessToken }) => {
+  if (!signature || typeof signature !== "object") return signature;
+
+  const hasDriveItem = String(signature?.driveItemId || "").trim();
+  const dataUrl = String(signature?.dataUrl || "").trim();
+
+  if (hasDriveItem || !dataUrl) return signature;
+
+  const parsed = parseDataUrlImage(dataUrl);
+  if (!parsed) return signature;
+
+  const extension = getExtensionFromMimeType(parsed.mimeType) || ".png";
+  const storedName = buildStoredFileName(`${filePrefix}${extension}`);
+  const uploadedItem = await uploadBufferToDrive({
+    siteId,
+    driveId,
+    accessToken,
+    folderName: SIGNATURE_UPLOAD_FOLDER,
+    fileName: storedName,
+    mimeType: parsed.mimeType,
+    buffer: parsed.buffer,
+  });
+
+  return {
+    ...signature,
+    driveItemId: uploadedItem?.id || "",
+    originalName: `${filePrefix}${extension}`,
+    storedName: uploadedItem?.name || storedName,
+    fileUrl: uploadedItem?.webUrl || "",
+    uploadFolder: SIGNATURE_UPLOAD_FOLDER,
+    mimeType: parsed.mimeType,
+  };
+};
+
+const persistIncidentSignatures = async (incidentPayload = {}) => {
+  const { siteId, driveId } = getGraphConfig();
+  if (!siteId || !driveId) {
+    throw new Error("Signature upload is not configured. Missing SITE_ID or DRIVE_ID.");
+  }
+
+  const accessToken = await getAccessToken();
+
+  incidentPayload.investigation_signature = await uploadSignatureIfNeeded({
+    signature: incidentPayload?.investigation_signature,
+    filePrefix: "investigation_signature",
+    siteId,
+    driveId,
+    accessToken,
+  });
+
+  if (Array.isArray(incidentPayload.actions)) {
+    for (let index = 0; index < incidentPayload.actions.length; index += 1) {
+      const action = incidentPayload.actions[index];
+      if (!action?.observation?.observation_signature) continue;
+
+      action.observation.observation_signature = await uploadSignatureIfNeeded({
+        signature: action.observation.observation_signature,
+        filePrefix: `observation_signature_${index + 1}`,
+        siteId,
+        driveId,
+        accessToken,
+      });
+    }
+  }
+
+  return incidentPayload;
+};
+
+const getUploadSubfolder = (req, file) => {
+  const explicitType = String(
+    req?.body?.folderType || req?.body?.uploadType || req?.query?.folderType || req?.query?.uploadType || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  if (explicitType === "signature") return SIGNATURE_UPLOAD_FOLDER;
+  if (explicitType === "document") return DOCUMENT_UPLOAD_FOLDER;
+
+  const nameHint = String(file?.originalname || "").toLowerCase();
+  const fieldHint = String(file?.fieldname || "").toLowerCase();
+  if (nameHint.includes("signature") || fieldHint.includes("signature")) {
+    return SIGNATURE_UPLOAD_FOLDER;
+  }
+
+  return DOCUMENT_UPLOAD_FOLDER;
+};
+
 export const uploadIncidentAttachment = async (req, res) => {
   try {
     const file = req.file;
@@ -423,7 +559,9 @@ export const uploadIncidentAttachment = async (req, res) => {
 
     const accessToken = await getAccessToken();
     const storedName = buildStoredFileName(file.originalname);
-    const uploadUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/root:/${encodeURIComponent(storedName)}:/content`;
+  const uploadSubfolder = getUploadSubfolder(req, file);
+  const encodedPath = `${encodeURIComponent(uploadSubfolder)}/${encodeURIComponent(storedName)}`;
+  const uploadUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives/${driveId}/root:/${encodedPath}:/content`;
 
     const uploadResponse = await fetch(uploadUrl, {
       method: "PUT",
@@ -448,6 +586,7 @@ export const uploadIncidentAttachment = async (req, res) => {
         originalName: file.originalname,
         storedName: data.name || storedName,
         fileUrl: data.webUrl || "",
+        uploadFolder: uploadSubfolder,
         mimeType: file.mimetype,
         fileSize: file.size,
         extension: path.extname(file.originalname || "").toLowerCase(),
@@ -507,7 +646,7 @@ export const previewIncidentAttachment = async (req, res) => {
 
 export const createIncident = async (req, res) => {
   try {
-    const incidentPayload = buildIncidentPayload(req.body);
+    const incidentPayload = await persistIncidentSignatures(buildIncidentPayload(req.body));
     const incidentNumber = await getNextIncidentNumber();
 
     const incident = await IncidentModel.create({
@@ -588,7 +727,7 @@ export const getIncidentById = async (req, res) => {
 export const updateIncident = async (req, res) => {
   try {
     const { id } = req.params;
-    const incidentPayload = buildIncidentPayload(req.body);
+    const incidentPayload = await persistIncidentSignatures(buildIncidentPayload(req.body));
 
     const existingIncident = await IncidentModel.findById(id).select("createdBy actions witnesses incident_title incidentNumber investigation_signature investigation_authority hazard investigation_contributing_behaviour investigation_contributing_condition investigation_comments investigation_files");
     if (!existingIncident) {
