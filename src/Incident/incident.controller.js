@@ -221,7 +221,6 @@ const buildIncidentPayload = (payload) => {
     location: payload.location,
     incident_eventDate: payload.incident_eventDate,
     incident_timeUnknown: payload.incident_timeUnknown,
-    incident_isPrivate: payload.incident_isPrivate,
     distributionRoles: payload.distributionRoles,
     distributionUsers: payload.distributionUsers,
     incident_attachment: normalizedAttachments[0] || payload.incident_attachment || null,

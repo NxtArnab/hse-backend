@@ -61,10 +61,6 @@ const incidentSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  incident_isPrivate: {
-    type: Boolean,
-    default: false,
-  },
   distributionRoles: {
     type: [String],
     default: [],
