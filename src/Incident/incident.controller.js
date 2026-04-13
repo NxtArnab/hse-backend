@@ -383,6 +383,11 @@ const getAccessToken = async () => {
 
   if (!response.ok) {
     const errorText = await response.text();
+    if (response.status === 400 && errorText.includes("AADSTS700016")) {
+      throw new Error(
+        `Failed to get access token: Azure app/tenant mismatch. Verify CLIENT_ID belongs to TENANT_ID and app consent is granted. tenant=${tenantId}, clientId=${clientId}. Azure response: ${errorText}`,
+      );
+    }
     if (response.status === 400 && errorText.includes("AADSTS7000216")) {
       throw new Error(
         "Failed to get access token: Azure rejected client credentials. Verify CLIENT_ID, TENANT_ID, CLIENT_SECRET value and secret expiry in Azure App Registration.",
@@ -489,11 +494,27 @@ const uploadSignatureIfNeeded = async ({ signature, filePrefix, siteId, driveId,
 
 const persistIncidentSignatures = async (incidentPayload = {}) => {
   const { siteId, driveId } = getGraphConfig();
-  if (!siteId || !driveId) {
-    throw new Error("Signature upload is not configured. Missing SITE_ID or DRIVE_ID.");
+  const hasInvestigationSignature = Boolean(String(incidentPayload?.investigation_signature?.dataUrl || "").trim());
+  const hasObservationSignatures = Array.isArray(incidentPayload?.actions)
+    && incidentPayload.actions.some((action) => String(action?.observation?.observation_signature?.dataUrl || "").trim());
+
+  // If there is no new signature payload to upload, skip Graph token flow entirely.
+  if (!hasInvestigationSignature && !hasObservationSignatures) {
+    return incidentPayload;
   }
 
-  const accessToken = await getAccessToken();
+  if (!siteId || !driveId) {
+    console.warn("[Incident] Skipping signature upload: Missing SITE_ID or DRIVE_ID.");
+    return incidentPayload;
+  }
+
+  let accessToken = "";
+  try {
+    accessToken = await getAccessToken();
+  } catch (error) {
+    console.warn(`[Incident] Skipping signature upload: ${error?.message || error}`);
+    return incidentPayload;
+  }
 
   incidentPayload.investigation_signature = await uploadSignatureIfNeeded({
     signature: incidentPayload?.investigation_signature,
