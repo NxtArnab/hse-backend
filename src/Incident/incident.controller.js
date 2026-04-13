@@ -206,7 +206,7 @@ const notifyAssignedUsers = async ({ incident, recipientIds = [], senderId }) =>
     senderId,
     message,
     type: "incident_action_assigned",
-    link: "/hse",
+    link: getIncidentNotificationLink(incident),
   });
 };
 
@@ -242,6 +242,19 @@ const buildIncidentPayload = (payload) => {
   };
 };
 
+const isFutureIncidentEventDate = (value) => {
+  if (!value) return false;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  const eventDateOnly = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  const today = new Date();
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  return eventDateOnly.getTime() > todayOnly.getTime();
+};
+
 const getObservedByRecipients = (actions = []) => Array.from(
   new Set(
     (Array.isArray(actions) ? actions : [])
@@ -251,8 +264,45 @@ const getObservedByRecipients = (actions = []) => Array.from(
   ),
 );
 
+const normalizeObservationLockState = (observation = {}) => ({
+  observedBy: String(observation?.observedBy || "").trim(),
+  actionStatus: String(observation?.actionStatus || "").trim(),
+  percentageComplete: Number(observation?.percentageComplete ?? 0),
+  observationDate: observation?.observationDate ? new Date(observation.observationDate).toISOString() : "",
+  observationNotes: String(observation?.observationNotes || "").trim(),
+  findingsOrBarriers: String(observation?.findingsOrBarriers || "").trim(),
+  followUpRequired: Boolean(observation?.followUpRequired),
+  nextObservationDate: observation?.nextObservationDate ? new Date(observation.nextObservationDate).toISOString() : "",
+  attachment: JSON.stringify(observation?.attachment || null),
+  signatureDataUrl: String(observation?.observation_signature?.dataUrl || "").trim(),
+  signatureSignedBy: toObjectIdString(observation?.observation_signature?.signedBy),
+  signatureSignedAt: observation?.observation_signature?.signedAt
+    ? new Date(observation.observation_signature.signedAt).toISOString()
+    : "",
+});
+
+const isObservationLocked = (observation = {}) => {
+  const statusCompleted = String(observation?.actionStatus || "").trim().toLowerCase() === "completed";
+  const observedById = toObjectIdString(observation?.observedBy);
+  const signatureDataUrl = String(observation?.observation_signature?.dataUrl || "").trim();
+  const signatureSignedBy = toObjectIdString(observation?.observation_signature?.signedBy);
+
+  return Boolean(statusCompleted && observedById && signatureDataUrl && signatureSignedBy && signatureSignedBy === observedById);
+};
+
 const getIncidentLabel = (incident) =>
   incident?.incident_title || `Incident ${incident?.incidentNumber || ""}`.trim() || "an incident";
+
+const getIncidentNotificationLink = (incident, section = "incident") => {
+  const incidentId = String(incident?._id || "").trim();
+  if (!incidentId) return "/hse";
+
+  if (section === "investigation") {
+    return `/hse/create?incidentId=${incidentId}&editScope=investigation`;
+  }
+
+  return `/hse/create?incidentId=${incidentId}`;
+};
 
 const notifyObservedUsers = async ({ incident, recipientIds = [], senderId, isNewAssignment = false }) => {
   if (!incident || recipientIds.length === 0) return;
@@ -266,7 +316,7 @@ const notifyObservedUsers = async ({ incident, recipientIds = [], senderId, isNe
     senderId,
     message,
     type: isNewAssignment ? "incident_update" : "incident_observation",
-    link: "/hse",
+    link: getIncidentNotificationLink(incident),
   });
 };
 
@@ -286,7 +336,7 @@ const notifyInvestigationAuthorityAssigned = async ({ incident, recipientId, sen
     senderId,
     message,
     type: "incident_update",
-    link: "/hse",
+    link: getIncidentNotificationLink(incident, "investigation"),
   });
 };
 
@@ -316,7 +366,7 @@ const notifySafetyOfficersForInvestigationSignature = async ({ incident, senderI
     senderId,
     message: `Investigation authority signed "${incidentLabel}". Safety Officer, please check the further process/step.`,
     type: "incident_update",
-    link: "/hse",
+    link: getIncidentNotificationLink(incident, "investigation"),
   });
 };
 
@@ -333,7 +383,7 @@ const notifySafetyOfficersForObserverCompleted = async ({ incident, senderId }) 
     senderId,
     message: `Observer has completed and signed "${incidentLabel}".`,
     type: "incident_update",
-    link: "/hse",
+    link: getIncidentNotificationLink(incident),
   });
 };
 
@@ -667,6 +717,11 @@ export const previewIncidentAttachment = async (req, res) => {
 export const createIncident = async (req, res) => {
   try {
     const incidentPayload = await persistIncidentSignatures(buildIncidentPayload(req.body));
+    if (isFutureIncidentEventDate(incidentPayload?.incident_eventDate)) {
+      return res.status(400).json({
+        message: "Event Date cannot be in the future. Please select today or a past date.",
+      });
+    }
     const incidentNumber = await getNextIncidentNumber();
 
     const incident = await IncidentModel.create({
@@ -748,6 +803,11 @@ export const updateIncident = async (req, res) => {
   try {
     const { id } = req.params;
     const incidentPayload = await persistIncidentSignatures(buildIncidentPayload(req.body));
+    if (isFutureIncidentEventDate(incidentPayload?.incident_eventDate)) {
+      return res.status(400).json({
+        message: "Event Date cannot be in the future. Please select today or a past date.",
+      });
+    }
 
     const existingIncident = await IncidentModel.findById(id).select("createdBy actions witnesses incident_title incidentNumber investigation_signature investigation_authority hazard investigation_contributing_behaviour investigation_contributing_condition investigation_comments investigation_files");
     if (!existingIncident) {
@@ -763,6 +823,16 @@ export const updateIncident = async (req, res) => {
     const createdById = toObjectIdString(existingIncident.createdBy);
     const authorityId = toObjectIdString(existingIncident.investigation_authority);
     const isObserverOnly = !isSystemAdmin(req.user) && createdById !== userId && authorityId !== userId;
+
+    const isInvestigationAuthorityEditor = !isSystemAdmin(req.user) && authorityId === userId && createdById !== userId;
+    if (isInvestigationAuthorityEditor) {
+      const requestedAuthorityId = toObjectIdString(incidentPayload?.investigation_authority);
+      if (requestedAuthorityId !== authorityId) {
+        return res.status(403).json({
+          message: "Investigation Authority cannot be changed by the assigned Investigation Authority user.",
+        });
+      }
+    }
 
     // Skip investigation and witness checks for observers - they can only edit observations
     if (!isObserverOnly && hasSignedInvestigation(existingIncident)) {
@@ -800,6 +870,23 @@ export const updateIncident = async (req, res) => {
     if (observedByWasChangedAfterBeingSet) {
       return res.status(400).json({
         message: "Observed By cannot be changed once it has been set.",
+      });
+    }
+
+    const lockedObservationWasModified = (existingIncident.actions || []).some((existingAction, index) => {
+      const existingObservation = existingAction?.observation;
+      if (!isObservationLocked(existingObservation)) return false;
+
+      const nextObservation = incidentPayload?.actions?.[index]?.observation || {};
+      const previousState = normalizeObservationLockState(existingObservation);
+      const nextState = normalizeObservationLockState(nextObservation);
+
+      return JSON.stringify(previousState) !== JSON.stringify(nextState);
+    });
+
+    if (lockedObservationWasModified) {
+      return res.status(400).json({
+        message: "Completed and signed observations are locked and cannot be edited.",
       });
     }
 
