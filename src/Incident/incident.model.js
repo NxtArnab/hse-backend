@@ -41,10 +41,6 @@ const incidentSchema = new mongoose.Schema({
       required: false,
     },
   },
-  incident_recordable: {
-    type: Boolean,
-    default: false,
-  },
   incident_description: {
     type: String,
     required: true,

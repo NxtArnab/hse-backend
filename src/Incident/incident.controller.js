@@ -216,7 +216,6 @@ const buildIncidentPayload = (payload) => {
   return {
     incident_title: payload.incident_title,
     incident_eventTime: payload.incident_eventTime,
-    incident_recordable: payload.incident_recordable,
     incident_description: payload.incident_description,
     location: payload.location,
     incident_eventDate: payload.incident_eventDate,
@@ -793,14 +792,14 @@ export const getIncidentStats = async (req, res) => {
     const [stats] = await IncidentModel.aggregate([
       {
         $facet: {
-          // Recordable (critical) incidents in last 30 days
-          recordableLast30Days: [
-            { $match: { createdAt: { $gte: thirtyDaysAgo }, incident_recordable: true } },
+          // Total incidents in last 30 days
+          incidentsLast30Days: [
+            { $match: { createdAt: { $gte: thirtyDaysAgo } } },
             { $count: "count" },
           ],
-          // Recordable incidents in the 7-day window before last week (for trend)
-          recordablePrevWeek: [
-            { $match: { createdAt: { $gte: fourteenDaysAgo, $lt: sevenDaysAgo }, incident_recordable: true } },
+          // Incidents in the 7-day window before last week (for trend)
+          incidentsPrevWeek: [
+            { $match: { createdAt: { $gte: fourteenDaysAgo, $lt: sevenDaysAgo } } },
             { $count: "count" },
           ],
           // Actions with Open or Overdue status (need attention)
@@ -850,20 +849,20 @@ export const getIncidentStats = async (req, res) => {
 
     const total = stats.total[0]?.count || 0;
     const totalLast30Days = stats.totalLast30Days[0]?.count || 0;
-    const recordableLast30Days = stats.recordableLast30Days[0]?.count || 0;
-    const recordablePrevWeek = stats.recordablePrevWeek[0]?.count || 0;
+    const incidentsLast30Days = stats.incidentsLast30Days[0]?.count || 0;
+    const incidentsPrevWeek = stats.incidentsPrevWeek[0]?.count || 0;
     const openOrOverdueActions = stats.openOrOverdueActions[0]?.count || 0;
     const incidentsWithOpenActions = stats.incidentsWithOpenActions[0]?.count || 0;
     const investigatedThisWeek = stats.investigatedThisWeek[0]?.count || 0;
     const totalInvestigated = stats.totalInvestigated[0]?.count || 0;
 
     const resolutionRate = total > 0 ? Math.round((totalInvestigated / total) * 100) : 0;
-    const recordableChange = recordableLast30Days - recordablePrevWeek;
+    const incidentsChange = incidentsLast30Days - incidentsPrevWeek;
 
     res.status(200).json({
       data: {
-        recordableLast30Days,
-        recordableChange,
+        incidentsLast30Days,
+        incidentsChange,
         openOrOverdueActions,
         incidentsWithOpenActions,
         investigatedThisWeek,
