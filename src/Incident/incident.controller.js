@@ -783,6 +783,102 @@ export const getIncidents = async (req, res) => {
   }
 };
 
+export const getIncidentStats = async (req, res) => {
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now - 14 * 24 * 60 * 60 * 1000);
+
+    const [stats] = await IncidentModel.aggregate([
+      {
+        $facet: {
+          // Recordable (critical) incidents in last 30 days
+          recordableLast30Days: [
+            { $match: { createdAt: { $gte: thirtyDaysAgo }, incident_recordable: true } },
+            { $count: "count" },
+          ],
+          // Recordable incidents in the 7-day window before last week (for trend)
+          recordablePrevWeek: [
+            { $match: { createdAt: { $gte: fourteenDaysAgo, $lt: sevenDaysAgo }, incident_recordable: true } },
+            { $count: "count" },
+          ],
+          // Actions with Open or Overdue status (need attention)
+          openOrOverdueActions: [
+            { $unwind: { path: "$actions", preserveNullAndEmptyArrays: false } },
+            { $match: { "actions.observation.actionStatus": { $in: ["Open", "Overdue"] } } },
+            { $count: "count" },
+          ],
+          // Total incidents with at least 1 open/overdue action
+          incidentsWithOpenActions: [
+            {
+              $match: {
+                "actions.observation.actionStatus": { $in: ["Open", "Overdue"] },
+              },
+            },
+            { $count: "count" },
+          ],
+          // Investigations fully signed this week
+          investigatedThisWeek: [
+            {
+              $match: {
+                "investigation_signature.dataUrl": { $exists: true, $ne: "" },
+                "investigation_signature.signedAt": { $gte: sevenDaysAgo },
+              },
+            },
+            { $count: "count" },
+          ],
+          // Total incidents with signed investigation (resolved)
+          totalInvestigated: [
+            {
+              $match: {
+                "investigation_signature.dataUrl": { $exists: true, $ne: "" },
+              },
+            },
+            { $count: "count" },
+          ],
+          // Total incidents ever
+          total: [{ $count: "count" }],
+          // Total in last 30 days
+          totalLast30Days: [
+            { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+            { $count: "count" },
+          ],
+        },
+      },
+    ]);
+
+    const total = stats.total[0]?.count || 0;
+    const totalLast30Days = stats.totalLast30Days[0]?.count || 0;
+    const recordableLast30Days = stats.recordableLast30Days[0]?.count || 0;
+    const recordablePrevWeek = stats.recordablePrevWeek[0]?.count || 0;
+    const openOrOverdueActions = stats.openOrOverdueActions[0]?.count || 0;
+    const incidentsWithOpenActions = stats.incidentsWithOpenActions[0]?.count || 0;
+    const investigatedThisWeek = stats.investigatedThisWeek[0]?.count || 0;
+    const totalInvestigated = stats.totalInvestigated[0]?.count || 0;
+
+    const resolutionRate = total > 0 ? Math.round((totalInvestigated / total) * 100) : 0;
+    const recordableChange = recordableLast30Days - recordablePrevWeek;
+
+    res.status(200).json({
+      data: {
+        recordableLast30Days,
+        recordableChange,
+        openOrOverdueActions,
+        incidentsWithOpenActions,
+        investigatedThisWeek,
+        totalInvestigated,
+        resolutionRate,
+        totalLast30Days,
+        total,
+      },
+    });
+  } catch (error) {
+    console.error("getIncidentStats error:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 export const getIncidentById = async (req, res) => {
   try {
     const { id } = req.params;
